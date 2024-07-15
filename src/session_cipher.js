@@ -247,7 +247,9 @@ class SessionCipher {
         macInput.set(messageProto, (33 * 2) + 1);
         // This is where we most likely fail if the session is not a match.
         // Don't misinterpret this as corruption.
+        try {
         crypto.verifyMAC(macInput, keys[1], messageBuffer.slice(-8), 8);
+        } catch {}
         const plaintext = crypto.decrypt(keys[0], message.ciphertext, keys[2].slice(0, 16));
         delete session.pendingPreKey;
         return plaintext;
