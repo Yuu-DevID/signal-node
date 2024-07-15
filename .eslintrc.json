@@ -13,8 +13,8 @@
             "error",
             "always"
         ],
-        "no-console": "on",
-        "no-debugger": "on",
+        "no-console": "off",
+        "no-debugger": "off",
         "no-unused-vars": [
             "error",
             {
