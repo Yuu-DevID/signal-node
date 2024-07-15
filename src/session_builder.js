@@ -44,7 +44,7 @@ class SessionBuilder {
                 const openSession = record.getOpenSession();
                 if (openSession) {
                     console.warn("Closing stale open session for new outgoing prekey bundle");
-                    record.closeSession(openSession);
+                   // record.closeSession(openSession);
                 }
             }
             record.setSession(session);
@@ -72,7 +72,7 @@ class SessionBuilder {
         const existingOpenSession = record.getOpenSession();
         if (existingOpenSession) {
             console.warn("Closing open session in favor of incoming prekey bundle");
-            record.closeSession(existingOpenSession);
+           // record.closeSession(existingOpenSession);
         }
         record.setSession(await this.initSession(false, preKeyPair, signedPreKeyPair,
                                                  message.identityKey, message.baseKey,
