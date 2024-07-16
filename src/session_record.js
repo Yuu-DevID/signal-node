@@ -1,8 +1,12 @@
 const BaseKeyType = require('./base_key_type');
-const { assertBuffer } = require('./utils'); // Assuming assertBuffer is defined in a utility file
-
 const CLOSED_SESSIONS_MAX = 40;
 const SESSION_RECORD_VERSION = 'v1';
+
+function assertBuffer(value) {
+    if (!Buffer.isBuffer(value)) {
+        throw new TypeError("Buffer required");
+    }
+}
 
 class SessionEntry {
     constructor() {
