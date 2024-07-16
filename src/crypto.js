@@ -13,62 +13,95 @@ function assertBuffer(value) {
 }
 
 function encrypt(key, data, iv) {
-    assertBuffer(key);
-    assertBuffer(data);
-    assertBuffer(iv);
-    const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
-    return Buffer.concat([cipher.update(data), cipher.final()]);
+    try {
+        assertBuffer(key);
+        assertBuffer(data);
+        assertBuffer(iv);
+        const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
+        return Buffer.concat([cipher.update(data), cipher.final()]);
+    } catch (error) {
+        console.error("Encryption error:", error.message);
+        return null;
+    }
 }
 
 function decrypt(key, data, iv) {
-    assertBuffer(key);
-    assertBuffer(data);
-    assertBuffer(iv);
-    const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
-    return Buffer.concat([decipher.update(data), decipher.final()]);
+    try {
+        assertBuffer(key);
+        assertBuffer(data);
+        assertBuffer(iv);
+        const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+        return Buffer.concat([decipher.update(data), decipher.final()]);
+    } catch (error) {
+        console.error("Decryption error:", error.message);
+        return null;
+    }
 }
 
 function calculateMAC(key, data) {
-    assertBuffer(key);
-    assertBuffer(data);
-    return crypto.createHmac('sha256', key).update(data).digest();
+    try {
+        assertBuffer(key);
+        assertBuffer(data);
+        return crypto.createHmac('sha256', key).update(data).digest();
+    } catch (error) {
+        console.error("MAC calculation error:", error.message);
+        return null;
+    }
 }
 
 function hash(data) {
-    assertBuffer(data);
-    return crypto.createHash('sha512').update(data).digest();
+    try {
+        assertBuffer(data);
+        return crypto.createHash('sha512').update(data).digest();
+    } catch (error) {
+        console.error("Hash error:", error.message);
+        return null;
+    }
 }
 
-// Salts always end up being 32 bytes
 function deriveSecrets(input, salt, info, chunks = 3) {
-    assertBuffer(input);
-    assertBuffer(salt);
-    assertBuffer(info);
+    try {
+        assertBuffer(input);
+        assertBuffer(salt);
+        assertBuffer(info);
 
-    if (salt.length !== 32) {
-        throw new Error("Got salt of incorrect length");
+        if (salt.length !== 32) {
+            throw new Error("Got salt of incorrect length");
+        }
+
+        assert(chunks >= 1 && chunks <= 3);
+
+        const PRK = calculateMAC(salt, input);
+        if (PRK === null) throw new Error("PRK calculation failed");
+
+        const results = [];
+        let previous = Buffer.alloc(0);
+
+        for (let i = 1; i <= chunks; i++) {
+            const hmacInput = Buffer.concat([previous, info, Buffer.from([i])]);
+            previous = calculateMAC(PRK, hmacInput);
+            if (previous === null) throw new Error("HMAC calculation failed");
+            results.push(previous);
+        }
+
+        return results;
+    } catch (error) {
+        console.error("Secret derivation error:", error.message);
+        return null;
     }
-
-    assert(chunks >= 1 && chunks <= 3);
-
-    const PRK = calculateMAC(salt, input);
-    const results = [];
-    let previous = Buffer.alloc(0);
-
-    for (let i = 1; i <= chunks; i++) {
-        const hmacInput = Buffer.concat([previous, info, Buffer.from([i])]);
-        previous = calculateMAC(PRK, hmacInput);
-        results.push(previous);
-    }
-
-    return results;
 }
 
 function verifyMAC(data, key, mac, length) {
-    const calculatedMac = calculateMAC(key, data).slice(0, length);
-    if (mac.length !== length || !crypto.timingSafeEqual(mac, calculatedMac)) {
-        throw new Error("Bad MAC");
+    try {
+        const calculatedMac = calculateMAC(key, data).slice(0, length);
+        if (!calculatedMac || mac.length !== length || !crypto.timingSafeEqual(mac, calculatedMac)) {
+            throw new Error("Bad MAC");
+        }
+    } catch (error) {
+        console.error("MAC verification error:", error.message);
+        return false;
     }
+    return true;
 }
 
 module.exports = {
