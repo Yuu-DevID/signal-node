@@ -1,37 +1,23 @@
-// vim: ts=4:sw=4
-
 const BaseKeyType = require('./base_key_type');
+const { assertBuffer } = require('./utils'); // Assuming assertBuffer is defined in a utility file
 
 const CLOSED_SESSIONS_MAX = 40;
 const SESSION_RECORD_VERSION = 'v1';
 
-function assertBuffer(value) {
-    if (!Buffer.isBuffer(value)) {
-        throw new TypeError("Buffer required");
-    }
-}
-
-
 class SessionEntry {
-
     constructor() {
         this._chains = {};
     }
 
     toString() {
-        const baseKey = this.indexInfo && this.indexInfo.baseKey &&
-            this.indexInfo.baseKey.toString('base64');
+        const baseKey = this.indexInfo?.baseKey?.toString('base64');
         return `<SessionEntry [baseKey=${baseKey}]>`;
-    }
-
-    inspect() {
-        return this.toString();
     }
 
     addChain(key, value) {
         assertBuffer(key);
         const id = key.toString('base64');
-        if (this._chains.hasOwnProperty(id)) {
+        if (this._chains[id]) {
             throw new Error("Overwrite attempt");
         }
         this._chains[id] = value;
@@ -44,11 +30,10 @@ class SessionEntry {
 
     deleteChain(key) {
         assertBuffer(key);
-        const id = key.toString('base64');
-        if (!this._chains.hasOwnProperty(id)) {
+        if (!this._chains[key.toString('base64')]) {
             throw new ReferenceError("Not Found");
         }
-        delete this._chains[id];
+        delete this._chains[key.toString('base64')];
     }
 
     *chains() {
@@ -77,11 +62,13 @@ class SessionEntry {
                 created: this.indexInfo.created,
                 remoteIdentityKey: this.indexInfo.remoteIdentityKey.toString('base64')
             },
-            _chains: this._serialize_chains(this._chains)
+            _chains: this._serializeChains(this._chains)
         };
         if (this.pendingPreKey) {
-            data.pendingPreKey = Object.assign({}, this.pendingPreKey);
-            data.pendingPreKey.baseKey = this.pendingPreKey.baseKey.toString('base64');
+            data.pendingPreKey = {
+                ...this.pendingPreKey,
+                baseKey: this.pendingPreKey.baseKey.toString('base64')
+            };
         }
         return data;
     }
@@ -106,56 +93,56 @@ class SessionEntry {
             created: data.indexInfo.created,
             remoteIdentityKey: Buffer.from(data.indexInfo.remoteIdentityKey, 'base64')
         };
-        obj._chains = this._deserialize_chains(data._chains);
+        obj._chains = this._deserializeChains(data._chains);
         if (data.pendingPreKey) {
-            obj.pendingPreKey = Object.assign({}, data.pendingPreKey);
-            obj.pendingPreKey.baseKey = Buffer.from(data.pendingPreKey.baseKey, 'base64');
+            obj.pendingPreKey = {
+                ...data.pendingPreKey,
+                baseKey: Buffer.from(data.pendingPreKey.baseKey, 'base64')
+            };
         }
         return obj;
     }
 
-    _serialize_chains(chains) {
-        const r = {};
+    _serializeChains(chains) {
+        const serializedChains = {};
         for (const key of Object.keys(chains)) {
-            const c = chains[key];
-            const messageKeys = {};
-            for (const [idx, key] of Object.entries(c.messageKeys)) {
-                messageKeys[idx] = key.toString('base64');
+            const chain = chains[key];
+            const serializedMessageKeys = {};
+            for (const [idx, key] of Object.entries(chain.messageKeys)) {
+                serializedMessageKeys[idx] = key.toString('base64');
             }
-            r[key] = {
+            serializedChains[key] = {
                 chainKey: {
-                    counter: c.chainKey.counter,
-                    key: c.chainKey.key && c.chainKey.key.toString('base64')
+                    counter: chain.chainKey.counter,
+                    key: chain.chainKey.key?.toString('base64')
                 },
-                chainType: c.chainType,
-                messageKeys: messageKeys
+                chainType: chain.chainType,
+                messageKeys: serializedMessageKeys
             };
         }
-        return r;
+        return serializedChains;
     }
 
-    static _deserialize_chains(chains_data) {
-        const r = {};
-        for (const key of Object.keys(chains_data)) {
-            const c = chains_data[key];
-            const messageKeys = {};
-            for (const [idx, key] of Object.entries(c.messageKeys)) {
-                messageKeys[idx] = Buffer.from(key, 'base64');
+    static _deserializeChains(chainsData) {
+        const deserializedChains = {};
+        for (const key of Object.keys(chainsData)) {
+            const chainData = chainsData[key];
+            const deserializedMessageKeys = {};
+            for (const [idx, key] of Object.entries(chainData.messageKeys)) {
+                deserializedMessageKeys[idx] = Buffer.from(key, 'base64');
             }
-            r[key] = {
+            deserializedChains[key] = {
                 chainKey: {
-                    counter: c.chainKey.counter,
-                    key: c.chainKey.key && Buffer.from(c.chainKey.key, 'base64')
+                    counter: chainData.chainKey.counter,
+                    key: chainData.chainKey.key ? Buffer.from(chainData.chainKey.key, 'base64') : undefined
                 },
-                chainType: c.chainType,
-                messageKeys: messageKeys
+                chainType: chainData.chainType,
+                messageKeys: deserializedMessageKeys
             };
         }
-        return r;
+        return deserializedChains;
     }
-
 }
-
 
 const migrations = [{
     version: 'v1',
@@ -170,18 +157,14 @@ const migrations = [{
         } else {
             for (const key in sessions) {
                 if (sessions[key].indexInfo.closed === -1) {
-                    console.error('V1 session storage migration error: registrationId',
-                                  data.registrationId, 'for open session version',
-                                  data.version);
+                    console.error(`V1 session storage migration error: registrationId ${data.registrationId} for open session version ${data.version}`);
                 }
             }
         }
     }
 }];
 
-
 class SessionRecord {
-
     static createEntry() {
         return new SessionEntry();
     }
@@ -220,12 +203,12 @@ class SessionRecord {
     }
 
     serialize() {
-        const _sessions = {};
+        const serializedSessions = {};
         for (const [key, entry] of Object.entries(this.sessions)) {
-            _sessions[key] = entry.serialize();
+            serializedSessions[key] = entry.serialize();
         }
         return {
-            _sessions,
+            _sessions: serializedSessions,
             version: this.version
         };
     }
@@ -258,11 +241,7 @@ class SessionRecord {
 
     getSessions() {
         // Return sessions ordered with most recently used first.
-        return Array.from(Object.values(this.sessions)).sort((a, b) => {
-            const aUsed = a.indexInfo.used || 0;
-            const bUsed = b.indexInfo.used || 0;
-            return aUsed === bUsed ? 0 : aUsed < bUsed ? 1 : -1;
-        });
+        return Object.values(this.sessions).sort((a, b) => (a.indexInfo.used || 0) - (b.indexInfo.used || 0));
     }
 
     closeSession(session) {
@@ -287,9 +266,10 @@ class SessionRecord {
     }
 
     removeOldSessions() {
+        const CLOSED_SESSIONS_MAX = 100
         while (Object.keys(this.sessions).length > CLOSED_SESSIONS_MAX) {
-            let oldestKey;
-            let oldestSession;
+            let oldestKey = null;
+            let oldestSession = null;
             for (const [key, session] of Object.entries(this.sessions)) {
                 if (session.indexInfo.closed !== -1 &&
                     (!oldestSession || session.indexInfo.closed < oldestSession.indexInfo.closed)) {
@@ -307,9 +287,8 @@ class SessionRecord {
     }
 
     deleteAllSessions() {
-        for (const key of Object.keys(this.sessions)) {
-            delete this.sessions[key];
-        }
+        this.sessions = {}; 
+        console.info("All sessions deleted");
     }
 }
 
