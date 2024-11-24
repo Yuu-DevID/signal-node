@@ -1,3 +1,4 @@
+/* eslint-disable */
 // vim: ts=4:sw=4
 
 const BaseKeyType = require('./base_key_type');
