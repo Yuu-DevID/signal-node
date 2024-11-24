@@ -2,106 +2,90 @@
 
 'use strict';
 
-const crypto = require('crypto');
+const nodeCrypto = require('crypto');
 const assert = require('assert');
 
+
 function assertBuffer(value) {
-    if (!Buffer.isBuffer(value)) {
-        throw new TypeError(`Expected Buffer instead of: ${typeof value}`);
+    if (!(value instanceof Buffer)) {
+        throw TypeError(`Expected Buffer instead of: ${value.constructor.name}`);
     }
     return value;
 }
 
+
 function encrypt(key, data, iv) {
-    try {
-        assertBuffer(key);
-        assertBuffer(data);
-        assertBuffer(iv);
-        const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
-        return Buffer.concat([cipher.update(data), cipher.final()]);
-    } catch (error) {
-        console.error("Encryption error:", error.message);
-        return null;
-    }
+    assertBuffer(key);
+    assertBuffer(data);
+    assertBuffer(iv);
+    const cipher = nodeCrypto.createCipheriv('aes-256-cbc', key, iv);
+    return Buffer.concat([cipher.update(data), cipher.final()]);
 }
+
 
 function decrypt(key, data, iv) {
-    try {
-        assertBuffer(key);
-        assertBuffer(data);
-        assertBuffer(iv);
-        const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
-        return Buffer.concat([decipher.update(data), decipher.final()]);
-    } catch (error) {
-        console.error("Decryption error:", error.message);
-        return null;
-    }
+    assertBuffer(key);
+    assertBuffer(data);
+    assertBuffer(iv);
+    const decipher = nodeCrypto.createDecipheriv('aes-256-cbc', key, iv);
+    return Buffer.concat([decipher.update(data), decipher.final()]);
 }
+
 
 function calculateMAC(key, data) {
-    try {
-        assertBuffer(key);
-        assertBuffer(data);
-        return crypto.createHmac('sha256', key).update(data).digest();
-    } catch (error) {
-        console.error("MAC calculation error:", error.message);
-        return null;
-    }
+    assertBuffer(key);
+    assertBuffer(data);
+    const hmac = nodeCrypto.createHmac('sha256', key);
+    hmac.update(data);
+    return Buffer.from(hmac.digest());
 }
+
 
 function hash(data) {
-    try {
-        assertBuffer(data);
-        return crypto.createHash('sha512').update(data).digest();
-    } catch (error) {
-        console.error("Hash error:", error.message);
-        return null;
-    }
+    assertBuffer(data);
+    const sha512 = nodeCrypto.createHash('sha512');
+    sha512.update(data);
+    return sha512.digest();
 }
 
-function deriveSecrets(input, salt, info, chunks = 3) {
-    try {
-        assertBuffer(input);
-        assertBuffer(salt);
-        assertBuffer(info);
 
-        if (salt.length !== 32) {
-            throw new Error("Got salt of incorrect length");
-        }
-
-        assert(chunks >= 1 && chunks <= 3);
-
-        const PRK = calculateMAC(salt, input);
-        if (PRK === null) throw new Error("PRK calculation failed");
-
-        const results = [];
-        let previous = Buffer.alloc(0);
-
-        for (let i = 1; i <= chunks; i++) {
-            const hmacInput = Buffer.concat([previous, info, Buffer.from([i])]);
-            previous = calculateMAC(PRK, hmacInput);
-            if (previous === null) throw new Error("HMAC calculation failed");
-            results.push(previous);
-        }
-
-        return results;
-    } catch (error) {
-        console.error("Secret derivation error:", error.message);
-        return null;
+// Salts always end up being 32 bytes
+function deriveSecrets(input, salt, info, chunks) {
+    // Specific implementation of RFC 5869 that only returns the first 3 32-byte chunks
+    assertBuffer(input);
+    assertBuffer(salt);
+    assertBuffer(info);
+    if (salt.byteLength != 32) {
+        throw new Error("Got salt of incorrect length");
     }
+    chunks = chunks || 3;
+    assert(chunks >= 1 && chunks <= 3);
+    const PRK = calculateMAC(salt, input);
+    const infoArray = new Uint8Array(info.byteLength + 1 + 32);
+    infoArray.set(info, 32);
+    infoArray[infoArray.length - 1] = 1;
+    const signed = [calculateMAC(PRK, Buffer.from(infoArray.slice(32)))];
+    if (chunks > 1) {
+        infoArray.set(signed[signed.length - 1]);
+        infoArray[infoArray.length - 1] = 2;
+        signed.push(calculateMAC(PRK, Buffer.from(infoArray)));
+    }
+    if (chunks > 2) {
+        infoArray.set(signed[signed.length - 1]);
+        infoArray[infoArray.length - 1] = 3;
+        signed.push(calculateMAC(PRK, Buffer.from(infoArray)));
+    }
+    return signed;
 }
 
 function verifyMAC(data, key, mac, length) {
-    try {
-        const calculatedMac = calculateMAC(key, data).slice(0, length);
-        if (!calculatedMac || mac.length !== length || !crypto.timingSafeEqual(mac, calculatedMac)) {
-            throw new Error("Bad MAC");
-        }
-    } catch (error) {
-        console.error("MAC verification error:", error.message);
-        return false;
+    const calculatedMac = calculateMAC(key, data).slice(0, length);
+    if (mac.length !== length || calculatedMac.length !== length) {
+        throw new Error("Bad MAC length");
     }
-    return true;
+    if (!mac.equals(calculatedMac)) {
+        throw new Error("Bad MAC");
+    }
 }
 
 module.exports = {
