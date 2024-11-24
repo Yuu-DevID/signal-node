@@ -1,6 +1,6 @@
 {
-  "name": "signal-node",
-  "version": "2.0.2",
+  "name": "libsignal",
+  "version": "2.0.1",
   "description": "Open Whisper Systems' libsignal for Node.js",
   "repository": "amiruldev20/signal-node",
   "main": "index.js",
@@ -12,7 +12,7 @@
   "license": "GPL-3.0",
   "dependencies": {
     "curve25519-js": "^0.0.4",
-    "protobufjs": "^7.4.0"
+    "protobufjs": "6.8.8"
   },
   "files": [
     "src/*"
