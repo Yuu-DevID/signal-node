@@ -1,4 +1,4 @@
-/* eslint disable */
+/* eslint-disable */
 'use strict';
 
 const BaseKeyType = require('./base_key_type');
