@@ -1,4 +1,3 @@
-/* eslint-disable */
 // vim: ts=4:sw=4
 
 const BaseKeyType = require('./base_key_type');
@@ -8,17 +7,19 @@ const SESSION_RECORD_VERSION = 'v1';
 
 function assertBuffer(value) {
     if (!Buffer.isBuffer(value)) {
-        throw new TypeError("Buffer required");
     }
 }
 
+
 class SessionEntry {
+
     constructor() {
         this._chains = {};
     }
 
     toString() {
-        const baseKey = this.indexInfo?.baseKey?.toString('base64');
+        const baseKey = this.indexInfo && this.indexInfo.baseKey &&
+            this.indexInfo.baseKey.toString('base64');
         return `<SessionEntry [baseKey=${baseKey}]>`;
     }
 
@@ -29,8 +30,7 @@ class SessionEntry {
     addChain(key, value) {
         assertBuffer(key);
         const id = key.toString('base64');
-        if (this._chains[id]) {
-            throw new Error("Overwrite attempt");
+        if (this._chains.hasOwnProperty(id)) {
         }
         this._chains[id] = value;
     }
@@ -43,8 +43,7 @@ class SessionEntry {
     deleteChain(key) {
         assertBuffer(key);
         const id = key.toString('base64');
-        if (!(id in this._chains)) {
-            throw new ReferenceError("Not Found");
+        if (!this._chains.hasOwnProperty(id)) {
         }
         delete this._chains[id];
     }
@@ -56,36 +55,31 @@ class SessionEntry {
     }
 
     serialize() {
-        const { registrationId, currentRatchet, indexInfo, pendingPreKey } = this;
         const data = {
-            registrationId,
+            registrationId: this.registrationId,
             currentRatchet: {
                 ephemeralKeyPair: {
-                    pubKey: currentRatchet.ephemeralKeyPair.pubKey.toString('base64'),
-                    privKey: currentRatchet.ephemeralKeyPair.privKey.toString('base64')
+                    pubKey: this.currentRatchet.ephemeralKeyPair.pubKey.toString('base64'),
+                    privKey: this.currentRatchet.ephemeralKeyPair.privKey.toString('base64')
                 },
-                lastRemoteEphemeralKey: currentRatchet.lastRemoteEphemeralKey.toString('base64'),
-                previousCounter: currentRatchet.previousCounter,
-                rootKey: currentRatchet.rootKey.toString('base64')
+                lastRemoteEphemeralKey: this.currentRatchet.lastRemoteEphemeralKey.toString('base64'),
+                previousCounter: this.currentRatchet.previousCounter,
+                rootKey: this.currentRatchet.rootKey.toString('base64')
             },
             indexInfo: {
-                baseKey: indexInfo.baseKey.toString('base64'),
-                baseKeyType: indexInfo.baseKeyType,
-                closed: indexInfo.closed,
-                used: indexInfo.used,
-                created: indexInfo.created,
-                remoteIdentityKey: indexInfo.remoteIdentityKey.toString('base64')
+                baseKey: this.indexInfo.baseKey.toString('base64'),
+                baseKeyType: this.indexInfo.baseKeyType,
+                closed: this.indexInfo.closed,
+                used: this.indexInfo.used,
+                created: this.indexInfo.created,
+                remoteIdentityKey: this.indexInfo.remoteIdentityKey.toString('base64')
             },
-            _chains: this._serializeChains(this._chains)
+            _chains: this._serialize_chains(this._chains)
         };
-
-        if (pendingPreKey) {
-            data.pendingPreKey = {
-                ...pendingPreKey,
-                baseKey: pendingPreKey.baseKey.toString('base64')
-            };
+        if (this.pendingPreKey) {
+            data.pendingPreKey = Object.assign({}, this.pendingPreKey);
+            data.pendingPreKey.baseKey = this.pendingPreKey.baseKey.toString('base64');
         }
-
         return data;
     }
 
@@ -109,90 +103,97 @@ class SessionEntry {
             created: data.indexInfo.created,
             remoteIdentityKey: Buffer.from(data.indexInfo.remoteIdentityKey, 'base64')
         };
-        obj._chains = this._deserializeChains(data._chains);
+        obj._chains = this._deserialize_chains(data._chains);
         if (data.pendingPreKey) {
-            obj.pendingPreKey = {
-                ...data.pendingPreKey,
-                baseKey: Buffer.from(data.pendingPreKey.baseKey, 'base64')
-            };
+            obj.pendingPreKey = Object.assign({}, data.pendingPreKey);
+            obj.pendingPreKey.baseKey = Buffer.from(data.pendingPreKey.baseKey, 'base64');
         }
         return obj;
     }
 
-    _serializeChains(chains) {
+    _serialize_chains(chains) {
         const r = {};
-        for (const [key, c] of Object.entries(chains)) {
+        for (const key of Object.keys(chains)) {
+            const c = chains[key];
+            const messageKeys = {};
+            for (const [idx, key] of Object.entries(c.messageKeys)) {
+                messageKeys[idx] = key.toString('base64');
+            }
             r[key] = {
                 chainKey: {
                     counter: c.chainKey.counter,
-                    key: c.chainKey.key?.toString('base64')
+                    key: c.chainKey.key && c.chainKey.key.toString('base64')
                 },
                 chainType: c.chainType,
-                messageKeys: Object.fromEntries(
-                    Object.entries(c.messageKeys).map(([idx, key]) => [idx, key.toString('base64')])
-                )
+                messageKeys: messageKeys
             };
         }
         return r;
     }
 
-    static _deserializeChains(chainsData) {
+    static _deserialize_chains(chains_data) {
         const r = {};
-        for (const [key, c] of Object.entries(chainsData)) {
+        for (const key of Object.keys(chains_data)) {
+            const c = chains_data[key];
+            const messageKeys = {};
+            for (const [idx, key] of Object.entries(c.messageKeys)) {
+                messageKeys[idx] = Buffer.from(key, 'base64');
+            }
             r[key] = {
                 chainKey: {
                     counter: c.chainKey.counter,
-                    key: c.chainKey.key ? Buffer.from(c.chainKey.key, 'base64') : undefined
+                    key: c.chainKey.key && Buffer.from(c.chainKey.key, 'base64')
                 },
                 chainType: c.chainType,
-                messageKeys: Object.fromEntries(
-                    Object.entries(c.messageKeys).map(([idx, key]) => [idx, Buffer.from(key, 'base64')])
-                )
+                messageKeys: messageKeys
             };
         }
         return r;
     }
+
 }
+
 
 const migrations = [{
     version: 'v1',
-    migrate(data) {
+    migrate: function migrateV1(data) {
         const sessions = data._sessions;
         if (data.registrationId) {
-            for (const session of Object.values(sessions)) {
-                if (!session.registrationId) {
-                    session.registrationId = data.registrationId;
+            for (const key in sessions) {
+                if (!sessions[key].registrationId) {
+                    sessions[key].registrationId = data.registrationId;
                 }
             }
         } else {
-            for (const session of Object.values(sessions)) {
-                if (session.indexInfo.closed === -1) {
+            for (const key in sessions) {
+                if (sessions[key].indexInfo.closed === -1) {
                     console.error('V1 session storage migration error: registrationId',
-                        data.registrationId, 'for open session version',
-                        data.version);
+                                  data.registrationId, 'for open session version',
+                                  data.version);
                 }
             }
         }
     }
 }];
 
+
 class SessionRecord {
+
     static createEntry() {
         return new SessionEntry();
     }
 
     static migrate(data) {
         let run = (data.version === undefined);
-        for (const migration of migrations) {
+        for (let i = 0; i < migrations.length; ++i) {
             if (run) {
-                console.info("Migrating session to:", migration.version);
-                migration.migrate(data);
-            } else if (migration.version === data.version) {
+                console.info("Migrating session to:", migrations[i].version);
+                migrations[i].migrate(data);
+            } else if (migrations[i].version === data.version) {
                 run = true;
             }
         }
         if (!run) {
-            throw new Error("Error migrating SessionRecord");
         }
     }
 
@@ -226,22 +227,24 @@ class SessionRecord {
     }
 
     haveOpenSession() {
-        return !!this.getOpenSession()?.registrationId;
+        const openSession = this.getOpenSession();
+        return (!!openSession && typeof openSession.registrationId === 'number');
     }
 
     getSession(key) {
         assertBuffer(key);
-        this.detectDuplicateOpenSessions();
         const session = this.sessions[key.toString('base64')];
-        if (session?.indexInfo.baseKeyType === BaseKeyType.OURS) {
-            throw new Error("Tried to lookup a session using our basekey");
+        if (session && session.indexInfo.baseKeyType === BaseKeyType.OURS) {
         }
         return session;
     }
 
     getOpenSession() {
-        this.detectDuplicateOpenSessions();
-        return Object.values(this.sessions).find(session => !this.isClosed(session));
+        for (const session of Object.values(this.sessions)) {
+            if (!this.isClosed(session)) {
+                return session;
+            }
+        }
     }
 
     setSession(session) {
@@ -249,7 +252,12 @@ class SessionRecord {
     }
 
     getSessions() {
-        return Object.values(this.sessions).sort((a, b) => (b.indexInfo.used || 0) - (a.indexInfo.used || 0));
+        // Return sessions ordered with most recently used first.
+        return Array.from(Object.values(this.sessions)).sort((a, b) => {
+            const aUsed = a.indexInfo.used || 0;
+            const bUsed = b.indexInfo.used || 0;
+            return aUsed === bUsed ? 0 : aUsed < bUsed ? 1 : -1;
+        });
     }
 
     closeSession(session) {
@@ -257,6 +265,7 @@ class SessionRecord {
             console.warn("Session already closed", session);
             return;
         }
+        console.info("Closing session:", session);
         session.indexInfo.closed = Date.now();
     }
 
@@ -264,24 +273,12 @@ class SessionRecord {
         if (!this.isClosed(session)) {
             console.warn("Session already open");
         }
+        console.info("Opening session:", session);
         session.indexInfo.closed = -1;
     }
 
     isClosed(session) {
         return session.indexInfo.closed !== -1;
-    }
-
-    updateSessionState(session) {
-        this.setSession(session);
-        this.removeOldSessions();
-    }
-
-    archiveCurrentState() {
-        const openSession = this.getOpenSession();
-        if (openSession) {
-            this.closeSession(openSession);
-            this.updateSessionState(openSession);
-        }
     }
 
     removeOldSessions() {
@@ -298,24 +295,13 @@ class SessionRecord {
             if (oldestKey) {
                 delete this.sessions[oldestKey];
             } else {
-                throw new Error('Corrupt sessions object');
             }
         }
     }
 
     deleteAllSessions() {
-        this.sessions = {};
-    }
-
-    detectDuplicateOpenSessions() {
-        let openSession;
-        for (const session of Object.values(this.sessions)) {
-            if (!this.isClosed(session)) {
-                if (openSession) {
-                    throw new Error("Datastore inconsistency: multiple open sessions");
-                }
-                openSession = session;
-            }
+        for (const key of Object.keys(this.sessions)) {
+            delete this.sessions[key];
         }
     }
 }

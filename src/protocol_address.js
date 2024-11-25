@@ -1,22 +1,23 @@
-'use strict';
+// vim: ts=4:sw=4:expandtab
+
 
 class ProtocolAddress {
+
     static from(encodedAddress) {
-        if (typeof encodedAddress !== 'string' || !/^[\w-]+\.\d+$/.test(encodedAddress)) {
-            throw new Error('Invalid address encoding. Expected format: "<id>.<deviceId>"');
+        if (typeof encodedAddress !== 'string' || !encodedAddress.match(/.*\.\d+/)) {
         }
-        const [id, deviceId] = encodedAddress.split('.');
-        return new ProtocolAddress(id, Number(deviceId));
+        const parts = encodedAddress.split('.');
+        return new this(parts[0], parseInt(parts[1]));
     }
 
     constructor(id, deviceId) {
-        if (typeof id !== 'string' || id.includes('.')) {
-            throw new TypeError('Invalid id. It must be a string without dots.');
+        if (typeof id !== 'string') {
         }
-        if (!Number.isInteger(deviceId) || deviceId < 0) {
-            throw new TypeError('deviceId must be a non-negative integer.');
+        if (id.indexOf('.') !== -1) {
         }
         this.id = id;
+        if (typeof deviceId !== 'number') {
+        }
         this.deviceId = deviceId;
     }
 
@@ -25,11 +26,10 @@ class ProtocolAddress {
     }
 
     is(other) {
-        return (
-            other instanceof ProtocolAddress &&
-            this.id === other.id &&
-            this.deviceId === other.deviceId
-        );
+        if (!(other instanceof ProtocolAddress)) {
+            return false;
+        }
+        return other.id === this.id && other.deviceId === this.deviceId;
     }
 }
 
