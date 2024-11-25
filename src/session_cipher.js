@@ -1,3 +1,4 @@
+/* eslint-disable*/
 // vim: ts=4:sw=4:expandtab
 
 const ChainType = require('./chain_type');
@@ -15,14 +16,12 @@ const VERSION = 3;
 
 function assertBuffer(value) {
     if (!(value instanceof Buffer)) {
-        throw TypeError(`Expected Buffer instead of: ${value.constructor.name}`);
+        throw new TypeError(`Expected Buffer instead of: ${value.constructor.name}`);
     }
     return value;
 }
 
-
 class SessionCipher {
-
     constructor(storage, protocolAddress) {
         if (!(protocolAddress instanceof ProtocolAddress)) {
             throw new TypeError("protocolAddress must be a ProtocolAddress");
@@ -33,7 +32,7 @@ class SessionCipher {
 
     _encodeTupleByte(number1, number2) {
         if (number1 > 15 || number2 > 15) {
-            throw TypeError("Numbers must be 4 bits or less");
+            throw new TypeError("Numbers must be 4 bits or less");
         }
         return (number1 << 4) | number2;
     }
@@ -46,11 +45,11 @@ class SessionCipher {
         return `<SessionCipher(${this.addr.toString()})>`;
     }
 
-    /** @returns {Promise<import('./session_record')>} */
+    /** @returns {Promise<SessionRecord>} */
     async getRecord() {
         const record = await this.storage.loadSession(this.addr.toString());
         if (record && !(record instanceof SessionRecord)) {
-            throw new TypeError('SessionRecord type expected from loadSession'); 
+            throw new TypeError('SessionRecord type expected from loadSession');
         }
         return record;
     }
@@ -72,32 +71,39 @@ class SessionCipher {
                 this.storage.getOurRegistrationId(),
                 this.getRecord()
             ]);
+
             if (!record) {
                 throw new errors.SessionError("No sessions");
             }
+
             const session = record.getOpenSession();
             if (!session) {
                 throw new errors.SessionError("No open session");
             }
+
             const chain = session.getChain(session.currentRatchet.ephemeralKeyPair.pubKey);
             if (chain.chainType === ChainType.RECEIVING) {
                 throw new Error("Tried to encrypt on a receiving chain");
             }
+
             this.fillMessageKeys(chain, chain.chainKey.counter + 1);
-            const keys = crypto.deriveSecrets(chain.messageKeys[chain.chainKey.counter],
-                Buffer.alloc(32), Buffer.from("WhisperMessageKeys"));
-                delete chain.messageKeys[chain.chainKey.counter];
-                const msg = protobufs.WhisperMessage.create();
-                msg.ephemeralKey = session.currentRatchet.ephemeralKeyPair.pubKey;
-                msg.counter = chain.chainKey.counter;
-                msg.previousCounter = session.currentRatchet.previousCounter;
-                msg.ciphertext = crypto.encrypt(keys[0], data, keys[2].slice(0, 16));
-                const msgBuf = protobufs.WhisperMessage.encode(msg).finish();
-                const macInput = Buffer.alloc(msgBuf.byteLength + (33 * 2) + 1);
-                macInput.set(ourIdentityKey.pubKey);
-                macInput.set(session.indexInfo.remoteIdentityKey, 33);
-                macInput[33 * 2] = this._encodeTupleByte(VERSION, VERSION); // 51
+            const keys = crypto.deriveSecrets(chain.messageKeys[chain.chainKey.counter], Buffer.alloc(32), Buffer.from("WhisperMessageKeys"));
+            delete chain.messageKeys[chain.chainKey.counter];
+
+            const msg = protobufs.WhisperMessage.create({
+                ephemeralKey: session.currentRatchet.ephemeralKeyPair.pubKey,
+                counter: chain.chainKey.counter,
+                previousCounter: session.currentRatchet.previousCounter,
+                ciphertext: crypto.encrypt(keys[0], data, keys[2].slice(0, 16))
+            });
+
+            const msgBuf = protobufs.WhisperMessage.encode(msg).finish();
+            const macInput = Buffer.alloc(msgBuf.byteLength + (33 * 2) + 1);
+            macInput.set(ourIdentityKey.pubKey);
+            macInput.set(session.indexInfo.remoteIdentityKey, 33);
+            macInput[33 * 2] = this._encodeTupleByte(VERSION, VERSION);
             macInput.set(msgBuf, (33 * 2) + 1);
+
             const mac = crypto.calculateMAC(keys[1], macInput);
             const result = Buffer.alloc(msgBuf.byteLength + 9);
             result[0] = this._encodeTupleByte(VERSION, VERSION);
@@ -109,11 +115,9 @@ class SessionCipher {
                 throw new errors.UntrustedIdentityKeyError(this.addr.id, remoteIdentityKey);
             }
 
-            // this.storage.saveIdentity(session.indexInfo.remoteIdentityKey)
-            
             record.updateSessionState(session);
             await this.storeRecord(record);
-            
+
             let type, body;
             if (session.pendingPreKey) {
                 type = 3;  // prekey bundle
@@ -129,9 +133,7 @@ class SessionCipher {
                 }
                 body = Buffer.concat([
                     Buffer.from([this._encodeTupleByte(VERSION, VERSION)]),
-                    Buffer.from(
-                        protobufs.PreKeyWhisperMessage.encode(preKeyMsg).finish()
-                    )
+                    Buffer.from(protobufs.PreKeyWhisperMessage.encode(preKeyMsg).finish())
                 ]);
             } else {
                 type = 1;  // normal
@@ -146,11 +148,9 @@ class SessionCipher {
     }
 
     async decryptWithSessions(data, sessions, errors = []) {
-        // Iterate through the sessions, attempting to decrypt using each one.
-        // Stop and return the result if we get a valid result.
         if (!sessions.length) {
             throw new errors.SessionError(errors[0] || "No sessions available");
-        }   
+        }
         const session = sessions.pop();
         try {
             const plaintext = await this.doDecryptWhisperMessage(data, session);
@@ -176,23 +176,17 @@ class SessionCipher {
             }
             const result = await this.decryptWithSessions(data, record.getSessions());
             const session = (await this.getRecord()).getOpenSession();
-            if (result.session.indexInfo.baseKey != session.indexInfo.baseKey) {
+            if (result.session.indexInfo.baseKey !== session.indexInfo.baseKey) {
                 record.archiveCurrentState();
                 record.openSession(result.session);
             }
             const remoteIdentityKey = result.session.indexInfo.remoteIdentityKey;
             if (!await this.storage.isTrustedIdentity(this.addr.id, remoteIdentityKey)) {
                 throw new errors.UntrustedIdentityKeyError(this.addr.id, remoteIdentityKey);
-            }   
+            }
             if (record.isClosed(result.session)) {
-                // It's possible for this to happen when processing a backlog of messages.
-                // The message was, hopefully, just sent back in a time when this session
-                // was the most current.  Simply make a note of it and continue.  If our
-                // actual open session is for reason invalid, that must be handled via
-                // a full SessionError response.
                 console.warn("Decrypted message with closed session.");
             }
-            // this.storage.saveIdentity
             record.updateSessionState(result.session);
             await this.storeRecord(record);
             return result.plaintext;
@@ -202,7 +196,7 @@ class SessionCipher {
     async decryptPreKeyWhisperMessage(data) {
         assertBuffer(data);
         const versions = this._decodeTupleByte(data[0]);
-        if (versions[1] > 3 || versions[0] < 3) {  // min version > 3 or max version < 3
+        if (versions[1] > 3 || versions[0] < 3) {
             throw new Error("Incompatible version number on PreKeyWhisperMessage");
         }
         return await this.queueJob(async () => {
@@ -225,7 +219,6 @@ class SessionCipher {
                 console.warn("Promote the old session and update identity");
                 record.archiveCurrentState();
                 record.openSession(session);
-                // this.storage.saveIdentity
             }
 
             await this.storeRecord(record);
@@ -239,13 +232,13 @@ class SessionCipher {
     async doDecryptWhisperMessage(messageBuffer, session) {
         assertBuffer(messageBuffer);
         if (!session) {
-            throw new Error("No session found to decrypt message from " + this.addr.toString())
+            throw new Error("No session found to decrypt message from " + this.addr.toString());
         }
         const versions = this._decodeTupleByte(messageBuffer[0]);
-        if (versions[1] > 3 || versions[0] < 3) {  // min version > 3 or max version < 3
+        if (versions[1] > 3 || versions[0] < 3) {
             throw new Error("Incompatible version number on WhisperMessage");
         }
-        const messageProto = messageBuffer.slice(1, -8);
+        const messageProto = messageBuffer.slice(1, - 8);
         const message = protobufs.WhisperMessage.decode(messageProto);
         await this.maybeStepRatchet(session, message.ephemeralKey, message.previousCounter);
         const chain = session.getChain(message.ephemeralKey);
@@ -254,22 +247,17 @@ class SessionCipher {
         }
         this.fillMessageKeys(chain, message.counter);
         if (!chain.messageKeys.hasOwnProperty(message.counter)) {
-            // Most likely the message was already decrypted and we are trying to process
-            // twice.  This can happen if the user restarts before the server gets an ACK.
             throw new errors.MessageCounterError("Message key not found. The counter was repeated or the key was not filled.");
         }
         const messageKey = chain.messageKeys[message.counter];
         delete chain.messageKeys[message.counter];
-        const keys = crypto.deriveSecrets(messageKey, Buffer.alloc(32),
-                                          Buffer.from("WhisperMessageKeys"));
+        const keys = crypto.deriveSecrets(messageKey, Buffer.alloc(32), Buffer.from("WhisperMessageKeys"));
         const ourIdentityKey = await this.storage.getOurIdentity();
         const macInput = Buffer.alloc(messageProto.byteLength + (33 * 2) + 1);
         macInput.set(session.indexInfo.remoteIdentityKey);
         macInput.set(ourIdentityKey.pubKey, 33);
         macInput[33 * 2] = this._encodeTupleByte(VERSION, VERSION);
         macInput.set(messageProto, (33 * 2) + 1);
-        // This is where we most likely fail if the session is not a match.
-        // Don't misinterpret this as corruption.
         crypto.verifyMAC(macInput, keys[1], messageBuffer.slice(-8), 8);
         const plaintext = crypto.decrypt(keys[0], message.ciphertext, keys[2].slice(0, 16));
         delete session.pendingPreKey;
@@ -304,7 +292,6 @@ class SessionCipher {
             delete previousRatchet.chainKey.key;  // Close
         }
         this.calculateRatchet(session, remoteKey, false);
-        // Now swap the ephemeral key and calculate the new sending chain
         const prevCounter = session.getChain(ratchet.ephemeralKeyPair.pubKey);
         if (prevCounter) {
             ratchet.previousCounter = prevCounter.chainKey.counter;
@@ -316,10 +303,9 @@ class SessionCipher {
     }
 
     calculateRatchet(session, remoteKey, sending) {
-        let ratchet = session.currentRatchet;
+        const ratchet = session.currentRatchet;
         const sharedSecret = curve.calculateAgreement(remoteKey, ratchet.ephemeralKeyPair.privKey);
-        const masterKey = crypto.deriveSecrets(sharedSecret, ratchet.rootKey,
-                                               Buffer.from("WhisperRatchet"), /*chunks*/ 2);
+        const masterKey = crypto.deriveSecrets(sharedSecret, ratchet.rootKey, Buffer.from("WhisperRatchet"), 2);
         const chainKey = sending ? ratchet.ephemeralKeyPair.pubKey : remoteKey;
         session.addChain(chainKey, {
             messageKeys: {},
@@ -335,10 +321,7 @@ class SessionCipher {
     async hasOpenSession() {
         return await this.queueJob(async () => {
             const record = await this.getRecord();
-            if (!record) {
-                return false;
-            }
-            return record.haveOpenSession();
+            return record ? record.haveOpenSession() : false;
         });
     }
 

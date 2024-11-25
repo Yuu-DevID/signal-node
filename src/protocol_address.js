@@ -1,27 +1,22 @@
-// vim: ts=4:sw=4:expandtab
-
+'use strict';
 
 class ProtocolAddress {
-
     static from(encodedAddress) {
-        if (typeof encodedAddress !== 'string' || !encodedAddress.match(/.*\.\d+/)) {
-            throw new Error('Invalid address encoding');
+        if (typeof encodedAddress !== 'string' || !/^[\w-]+\.\d+$/.test(encodedAddress)) {
+            throw new Error('Invalid address encoding. Expected format: "<id>.<deviceId>"');
         }
-        const parts = encodedAddress.split('.');
-        return new this(parts[0], parseInt(parts[1]));
+        const [id, deviceId] = encodedAddress.split('.');
+        return new ProtocolAddress(id, Number(deviceId));
     }
 
     constructor(id, deviceId) {
-        if (typeof id !== 'string') {
-            throw new TypeError('id required for addr');
+        if (typeof id !== 'string' || id.includes('.')) {
+            throw new TypeError('Invalid id. It must be a string without dots.');
         }
-        if (id.indexOf('.') !== -1) {
-            throw new TypeError('encoded addr detected');
+        if (!Number.isInteger(deviceId) || deviceId < 0) {
+            throw new TypeError('deviceId must be a non-negative integer.');
         }
         this.id = id;
-        if (typeof deviceId !== 'number') {
-            throw new TypeError('number required for deviceId');
-        }
         this.deviceId = deviceId;
     }
 
@@ -30,10 +25,11 @@ class ProtocolAddress {
     }
 
     is(other) {
-        if (!(other instanceof ProtocolAddress)) {
-            return false;
-        }
-        return other.id === this.id && other.deviceId === this.deviceId;
+        return (
+            other instanceof ProtocolAddress &&
+            this.id === other.id &&
+            this.deviceId === other.deviceId
+        );
     }
 }
 

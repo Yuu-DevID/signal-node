@@ -4,6 +4,9 @@
   "description": "Open Whisper Systems' libsignal for Node.js",
   "repository": "amiruldev20/signal-node",
   "main": "index.js",
+  "scripts": {
+    "lint": "npx eslint --fix ."
+  },
   "keywords": [
     "signal",
     "whispersystems",
