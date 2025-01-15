@@ -1,5 +1,13 @@
-libsignal-node
-========
+<a href="https://fb.com/techwiz.37">
+    <img src="https://readme-typing-svg.herokuapp.com?font=Orbitron&size=28&duration=3000&pause=1000&color=964B00&width=435&lines=Libsignal+NodeJS+2025;Made+by+Techwiz" alt="Typing SVG" />
+</a>
+
+[![-----------------------------------------------------](https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/colored.png)](#table-of-contents)
+
+WhatsApp Channel [click here](https://whatsapp.com/channel/0029VaF1UTpJ3jv1GsFYi302)
+WhatsApp Group [click here](https://chat.whatsapp.com/BDI3NMjO7vW7RlOqgdxtmw)
+Telegram Group [click here](https://t.me/+ZbVQkboVZ4IyYTQ1)
+
 Signal protocol implementation for Node.js based on
 [libsignal-protocol-javascript](https://github.com/WhisperSystems/libsignal-protocol-javascript).
 
